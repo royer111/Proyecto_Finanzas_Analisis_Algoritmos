@@ -1,9 +1,8 @@
-import os
 import csv
 import time
 import requests
 from datetime import datetime
-from pathlib import Path
+from backend.app.config import settings
 
 
 class DataExtractor:
@@ -11,62 +10,52 @@ class DataExtractor:
     Encargado exclusivamente de:
     - Construir la URL de consulta a Yahoo Finance
     - Descargar datos históricos
-    - Parsear respuesta CSV
+    - Parsear respuesta JSON
     - Guardar datos crudos en data/raw/
     """
 
-    def __init__(self, assets, start_date, end_date):
+    def __init__(self):
         """
-        :param assets: lista de símbolos financieros
-        :param start_date: fecha inicio (YYYY-MM-DD)
-        :param end_date: fecha fin (YYYY-MM-DD)
+        Carga configuración desde settings.py
         """
 
-        self.assets = assets
-        self.start_date = start_date
-        self.end_date = end_date
+        self.assets = settings.ASSETS
+        self.start_date = settings.START_DATE
+        self.end_date = settings.END_DATE
+        self.base_url = settings.YAHOO_BASE_URL
+        self.raw_data_path = settings.RAW_DATA_PATH
+        self.sleep_seconds = settings.REQUEST_SLEEP_SECONDS
 
-        # Convertir fechas a formato timestamp UNIX (requerido por Yahoo)
-        self.period1 = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
-        self.period2 = int(datetime.strptime(end_date, "%Y-%m-%d").timestamp())
+        # Convertir fechas a timestamp UNIX
+        self.period1 = int(datetime.strptime(self.start_date, "%Y-%m-%d").timestamp())
+        self.period2 = int(datetime.strptime(self.end_date, "%Y-%m-%d").timestamp())
 
-        # URL base oficial de descarga histórica
-        self.base_url = "https://finance.yahoo.com"
-
-        # Ruta absoluta del proyecto (compatible Mac/Linux)
-        self.project_root = Path(__file__).resolve().parents[3]
-        self.raw_data_path = self.project_root / "data" / "raw"
-
-        # Crear carpeta si no existe
-        os.makedirs(self.raw_data_path, exist_ok=True)
+    # ==========================================================
+    # CONSTRUCCIÓN DE URL
+    # ==========================================================
 
     def build_query_url(self, symbol):
         """
         Construye la URL completa para descargar datos históricos.
         """
 
-        url = (
+        return (
             f"{self.base_url}/{symbol}"
             f"?period1={self.period1}"
             f"&period2={self.period2}"
             f"&interval=1d"
-            f"&events=history"
-            f"&includeAdjustedClose=true"
         )
 
-        return url
+    # ==========================================================
+    # DESCARGA DE DATOS
+    # ==========================================================
 
     def fetch_asset_data(self, symbol):
         """
         Descarga datos históricos usando endpoint JSON estable de Yahoo.
         """
 
-        url = (
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-            f"?period1={self.period1}"
-            f"&period2={self.period2}"
-            f"&interval=1d"
-        )
+        url = self.build_query_url(symbol)
 
         headers = {
             "User-Agent": "Mozilla/5.0"
@@ -82,8 +71,12 @@ class DataExtractor:
             return response.json()
 
         except Exception as e:
-            print(f"[ERROR] {e}")
+            print(f"[ERROR] Fallo de red para {symbol}: {e}")
             return None
+
+    # ==========================================================
+    # PARSEO DE RESPUESTA
+    # ==========================================================
 
     def parse_response(self, json_data):
         """
@@ -108,6 +101,9 @@ class DataExtractor:
             volumes = indicators["volume"]
 
             for i in range(len(timestamps)):
+
+                # Si algún valor viene None, lo dejamos pasar.
+                # La limpieza formal se hará en data_cleaner.py
                 date = datetime.fromtimestamp(timestamps[i]).strftime("%Y-%m-%d")
 
                 parsed_data.append({
@@ -124,6 +120,10 @@ class DataExtractor:
 
         return parsed_data
 
+    # ==========================================================
+    # GUARDADO DE DATOS CRUDOS
+    # ==========================================================
+
     def save_raw_data(self, symbol, parsed_data):
         """
         Guarda los datos crudos en data/raw/{symbol}.csv
@@ -136,8 +136,12 @@ class DataExtractor:
         file_path = self.raw_data_path / f"{symbol}.csv"
 
         fieldnames = [
-            "Date", "Open", "High",
-            "Low", "Close", "Adj Close", "Volume"
+            "Date",
+            "Open",
+            "High",
+            "Low",
+            "Close",
+            "Volume"
         ]
 
         with open(file_path, mode="w", newline="") as file:
@@ -147,6 +151,10 @@ class DataExtractor:
 
         print(f"[OK] Datos guardados: {file_path}")
 
+    # ==========================================================
+    # FLUJO POR ACTIVO
+    # ==========================================================
+
     def download_single_asset(self, symbol):
         """
         Ejecuta flujo completo para un activo.
@@ -155,19 +163,31 @@ class DataExtractor:
         print(f"\nDescargando {symbol}...")
 
         raw_data = self.fetch_asset_data(symbol)
+
+        if not raw_data:
+            print(f"[WARNING] No se pudo descargar {symbol}")
+            return
+
         parsed_data = self.parse_response(raw_data)
         self.save_raw_data(symbol, parsed_data)
 
-        # Pausa pequeña para evitar bloqueos por rate limit
-        time.sleep(1)
+        time.sleep(self.sleep_seconds)
+
+    # ==========================================================
+    # FLUJO COMPLETO
+    # ==========================================================
 
     def download_all_assets(self):
         """
-        Descarga todos los activos definidos.
+        Descarga todos los activos definidos en settings.
         """
+
+        print("\n=== INICIANDO DESCARGA DE ACTIVOS ===\n")
 
         for symbol in self.assets:
             try:
                 self.download_single_asset(symbol)
             except Exception as e:
                 print(f"[ERROR] Fallo procesando {symbol}: {e}")
+
+        print("\n=== DESCARGA FINALIZADA ===\n")
