@@ -1,82 +1,73 @@
-from datetime import datetime
 from pathlib import Path
 
-
-# ============================================================
+# ==========================================================
 # CONFIGURACIÓN GENERAL DEL PROYECTO
-# ============================================================
+# ==========================================================
 
-# Raíz del proyecto (compatible Mac / Linux)
+# Ruta raíz del proyecto
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-# Carpetas principales
+# Rutas de almacenamiento de datos
 DATA_PATH = PROJECT_ROOT / "data"
 RAW_DATA_PATH = DATA_PATH / "raw"
 PROCESSED_DATA_PATH = DATA_PATH / "processed"
+MERGED_DATA_PATH = DATA_PATH / "merged"
 
-# Crear carpetas si no existen (seguridad)
+# Crear carpetas si no existen
 RAW_DATA_PATH.mkdir(parents=True, exist_ok=True)
 PROCESSED_DATA_PATH.mkdir(parents=True, exist_ok=True)
+MERGED_DATA_PATH.mkdir(parents=True, exist_ok=True)
 
+# ==========================================================
+# CONFIGURACIÓN DE DESCARGA (EXTRACT)
+# ==========================================================
 
-# ============================================================
-# CONFIGURACIÓN DE ACTIVOS
-# ============================================================
+# Endpoint oficial estable de Yahoo Finance
+YAHOO_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
 
-# Lista oficial de activos (mínimo 20 para entrega final)
+# Rango mínimo de 5 años
+START_DATE = "2019-01-01"
+END_DATE = "2024-01-01"
+
+# Intervalo de espera entre requests (evita bloqueos)
+REQUEST_SLEEP_SECONDS = 1
+
+# ==========================================================
+# PORTAFOLIO (MÍNIMO 20 ACTIVOS)
+# ==========================================================
+
 ASSETS = [
+
+    # ETFs Globales
+    "VOO",      # Vanguard S&P 500 ETF
+    "CSPX.L",   # iShares Core S&P 500 (London)
+    "QQQ",
+    "VTI",
+    "EFA",
+    "IEMG",
+    "GLD",
+    "TLT",
+    "XLF",
+    "XLK",
+
     # Acciones USA
     "AAPL",
     "MSFT",
     "GOOGL",
     "AMZN",
     "META",
-
-    # ETFs
-    "VOO",
-    "SPY",
-    "QQQ",
-    "IWM",
-    "EEM",
-
-    # Acciones adicionales
-    "TSLA",
     "NVDA",
-    "JPM",
-    "V",
-    "UNH",
+    "TSLA",
 
-    # Índices o adicionales
-    "^GSPC",
-    "^IXIC",
-    "XLF",
-    "XLK",
-    "XLE"
+    # Acciones Colombianas (Yahoo usa .BO para BVC)
+   # "ECOPETROL.BO",
+    #"ISA.BO",
+    #"GEB.BO"
 ]
 
-
-# ============================================================
-# CONFIGURACIÓN DE FECHAS
-# ============================================================
-
-# Horizonte mínimo 5 años
-END_DATE = datetime.today().strftime("%Y-%m-%d")
-START_DATE = (datetime.today().replace(year=datetime.today().year - 5)).strftime("%Y-%m-%d")
-
-
-# ============================================================
-# CONFIGURACIÓN DE YAHOO FINANCE
-# ============================================================
-
-YAHOO_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
-
-
-# ============================================================
-# CONFIGURACIÓN DE LIMPIEZA
-# ============================================================
-
-# Política para valores faltantes
-DROP_ROWS_WITH_NULLS = True
+# ==========================================================
+# CONFIGURACIÓN DE LIMPIEZA (TRANSFORM)
+# ==========================================================
 
 # Columnas obligatorias
 REQUIRED_COLUMNS = [
@@ -88,17 +79,16 @@ REQUIRED_COLUMNS = [
     "Volume"
 ]
 
-# Eliminar columna Adj Close si viene vacía
-REMOVE_ADJ_CLOSE = True
+# Manejo de valores faltantes
+DROP_ROWS_WITH_NULLS = True
 
+# Umbral de detección de anomalías (retorno diario absoluto)
+# 0.30 = 30%
+ANOMALY_THRESHOLD = 0.30
 
-# ============================================================
-# CONFIGURACIÓN DEL PIPELINE
-# ============================================================
+# ==========================================================
+# CONFIGURACIÓN DE UNIFICACIÓN (LOAD)
+# ==========================================================
 
-# Pausa entre requests (evitar bloqueos)
-REQUEST_SLEEP_SECONDS = 2
-
-# Nombre de archivos finales
-UNIFIED_DATASET_FILENAME = "unified_dataset.csv"
-RETURNS_DATASET_FILENAME = "returns_dataset.csv"
+# Si True → solo fechas donde TODOS los activos tengan datos
+STRICT_DATE_ALIGNMENT = True

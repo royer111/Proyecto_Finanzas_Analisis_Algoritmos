@@ -1,6 +1,5 @@
-from backend.app.etl.data_extractor import DataExtractor
-
+from backend.app.etl.etl_pipeline import ETLPipeline
 
 if __name__ == "__main__":
-    extractor = DataExtractor()
-    extractor.download_all_assets()
+    pipeline = ETLPipeline()
+    pipeline.run()
