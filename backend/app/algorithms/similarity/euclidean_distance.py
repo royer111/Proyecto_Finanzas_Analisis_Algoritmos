@@ -28,7 +28,7 @@ class EuclideanDistance:
     """
 
     # ==========================================================
-    # MÉTODO PRINCIPAL
+    # METODO PRINCIPAL
     # ==========================================================
 
     def calculate(self, series_1: List[float], series_2: List[float]) -> float:
