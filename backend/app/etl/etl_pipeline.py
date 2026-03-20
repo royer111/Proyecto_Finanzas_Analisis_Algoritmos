@@ -10,17 +10,14 @@ class ETLPipeline:
     Flujo:
     1. Extract  -> Descarga datos desde Yahoo
     2. Clean    -> Limpia y valida los datos
-    3. Merge    -> Unifica activos en estructuras conjuntas
+    3. Merge    -> Unifica activos en una matriz de precios de cierre
+    4. Merge    -> Unifica activos en una matriz de volumenes
     """
 
     def __init__(self):
-        #self.extractor = DataExtractor()
+        # self.extractor = DataExtractor()
         self.cleaner = DataCleaner()
         self.merger = DataMerger()
-
-    # ==========================================================
-    # EJECUCIÓN COMPLETA DEL PIPELINE
-    # ==========================================================
 
     def run(self):
         """
@@ -31,17 +28,21 @@ class ETLPipeline:
         print("   INICIANDO PROCESO ETL")
         print("==============================\n")
 
-        # 1️⃣ EXTRACT
-        print(">>> FASE 1: EXTRACCIÓN")
-        #self.extractor.download_all_assets()
+        # FASE 1: EXTRACCION
+        print(">>> FASE 1: EXTRACCION")
+        # self.extractor.download_all_assets()
 
-        # 2️⃣ CLEAN
+        # FASE 2: LIMPIEZA
         print("\n>>> FASE 2: LIMPIEZA")
         self.cleaner.clean_all_assets()
 
-        # 3️⃣ MERGE
-        print("\n>>> FASE 3: UNIFICACIÓN")
+        # FASE 3: MERGE DE PRECIOS DE CIERRE -> merged_prices.csv
+        print("\n>>> FASE 3: UNIFICACION DE PRECIOS")
         self.merger.merge_all_assets()
+
+        # FASE 4: MERGE DE VOLUMENES -> merged_volumenes.csv
+        print("\n>>> FASE 4: UNIFICACION DE VOLUMENES")
+        self.merger.merge_volume()
 
         print("\n==============================")
         print("   PROCESO ETL FINALIZADO")
