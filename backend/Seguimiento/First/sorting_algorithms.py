@@ -115,32 +115,60 @@ def selection_sort(arr, key=lambda x: x):
 #    BST manual (sin librerías de árbol)
 # ---------------------------------------------------------------------------
 def tree_sort(arr, key=lambda x: x):
+    """
+    Tree Sort con BST balanceado (AVL).
+    Insercion iterativa O(log n) garantizada, evita degeneracion
+    con datos parcialmente ordenados (caso comun en series financieras).
+    """
     class Node:
-        __slots__ = ("val", "left", "right")
+        __slots__ = ("val", "left", "right", "height")
         def __init__(self, v):
-            self.val = v; self.left = self.right = None
+            self.val = v
+            self.left = self.right = None
+            self.height = 1
+
+    def _h(n):
+        return n.height if n else 0
+
+    def _update_h(n):
+        n.height = 1 + max(_h(n.left), _h(n.right))
+
+    def _rotate_right(y):
+        x = y.left
+        y.left = x.right
+        x.right = y
+        _update_h(y); _update_h(x)
+        return x
+
+    def _rotate_left(x):
+        y = x.right
+        x.right = y.left
+        y.left = x
+        _update_h(x); _update_h(y)
+        return y
+
+    def _balance(n):
+        bf = _h(n.left) - _h(n.right)
+        if bf > 1:
+            if _h(n.left.left) < _h(n.left.right):
+                n.left = _rotate_left(n.left)
+            return _rotate_right(n)
+        if bf < -1:
+            if _h(n.right.right) < _h(n.right.left):
+                n.right = _rotate_right(n.right)
+            return _rotate_left(n)
+        _update_h(n)
+        return n
 
     def insert(root, val):
-        # Inserción ITERATIVA para evitar recursión profunda en árboles desbalanceados
         if root is None:
             return Node(val)
-        current = root
-        while True:
-            if key(val) < key(current.val):
-                if current.left is None:
-                    current.left = Node(val)
-                    break
-                else:
-                    current = current.left
-            else:
-                if current.right is None:
-                    current.right = Node(val)
-                    break
-                else:
-                    current = current.right
-        return root
+        if key(val) < key(root.val):
+            root.left = insert(root.left, val)
+        else:
+            root.right = insert(root.right, val)
+        return _balance(root)
 
-    # Iterative in-order para evitar recursion limit en datasets grandes
     def inorder(root):
         result, stack = [], []
         current = root
@@ -153,6 +181,8 @@ def tree_sort(arr, key=lambda x: x):
             current = current.right
         return result
 
+    import sys
+    sys.setrecursionlimit(max(50000, len(arr) * 3))
     root = None
     for item in arr:
         root = insert(root, item)
@@ -224,17 +254,49 @@ def bucket_sort(arr, key=lambda x: x):
 #    Iterativo para evitar stack overflow en grandes datasets
 # ---------------------------------------------------------------------------
 def quick_sort(arr, key=lambda x: x):
+    """
+    QuickSort iterativo con pivot median-of-three.
+    Evita la degeneracion O(n^2) con datos casi ordenados,
+    que es el caso tipico de series financieras ordenadas por fecha.
+    """
     data = list(arr)
 
+    def median_of_three(a, low, high):
+        mid = (low + high) // 2
+        # Ordena los tres candidatos in-place y devuelve el indice del pivot
+        if key(a[low]) > key(a[mid]):
+            a[low], a[mid] = a[mid], a[low]
+        if key(a[low]) > key(a[high]):
+            a[low], a[high] = a[high], a[low]
+        if key(a[mid]) > key(a[high]):
+            a[mid], a[high] = a[high], a[mid]
+        # Coloca el pivot (mediana) en high-1
+        a[mid], a[high - 1] = a[high - 1], a[mid]
+        return high - 1
+
     def partition(a, low, high):
-        pivot = key(a[high])
+        if high - low < 3:
+            # Para subarreglos muy pequenos usa insertion sort
+            for i in range(low + 1, high + 1):
+                tmp = a[i]; j = i - 1
+                while j >= low and key(a[j]) > key(tmp):
+                    a[j + 1] = a[j]; j -= 1
+                a[j + 1] = tmp
+            return (low + high) // 2
+        pivot_idx = median_of_three(a, low, high)
+        pivot = key(a[pivot_idx])
         i = low - 1
         for j in range(low, high):
+            if j == pivot_idx:
+                continue
             if key(a[j]) <= pivot:
                 i += 1
+                if i == pivot_idx:
+                    pivot_idx = j
                 a[i], a[j] = a[j], a[i]
-        a[i + 1], a[high] = a[high], a[i + 1]
-        return i + 1
+        i += 1
+        a[i], a[pivot_idx] = a[pivot_idx], a[i]
+        return i
 
     stack = [(0, len(data) - 1)]
     while stack:
@@ -386,4 +448,3 @@ def radix_sort(arr, key=lambda x: x):
         data, keys = counting_sort_by_digit(data, keys, exp)
         exp *= 10
     return data
-

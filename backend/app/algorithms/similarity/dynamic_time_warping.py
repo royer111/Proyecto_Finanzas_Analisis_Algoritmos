@@ -14,7 +14,7 @@ class DynamicTimeWarping:
         n = len(series_1)
         m = len(series_2)
 
-        # 2. Creación de la matriz de costo acumulado [cite: 38, 63]
+        # 2. Creación de la matriz de costo acumulado
         # Se inicializa con infinito para representar el costo de caminos no explorados.
         dtw_matrix = [[math.inf] * (m + 1) for _ in range(n + 1)]
         dtw_matrix[0][0] = 0

@@ -32,11 +32,12 @@ CSV_CLOSE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "..", "..", "data", "merged", "merged_prices.csv"
 )
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
 
-# OUTPUT_DIR original: os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
-# Ahora apuntamos al directorio actual (Seguimiento/First) para que los archivos generados queden ahí.
-OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
-
+# ---------------------------------------------------------------------------
+# Cambia este import por el de tu proyecto. Segun tu codigo deberia ser:
+#   from backend.app.services.data_merger import DataMerger
+# (ajusta la subcarpeta si data_merger.py esta en otro lugar)
 # ---------------------------------------------------------------------------
 try:
     from backend.app.etl.data_merger import DataMerger
@@ -84,8 +85,8 @@ COMPLEXITIES = {
     "Radix Sort":            "O(nk)",
 }
 
-SAMPLE_SIZE_SLOW    = 5000
-SAMPLE_SIZE_BITONIC = 8192
+# Todos los algoritmos usan el dataset completo.
+# Bitonic Sort usa la siguiente potencia de 2 >= n (requerimiento del algoritmo).
 
 
 # ===========================================================================
@@ -174,24 +175,35 @@ def _radix_wrapper(arr, key=lambda x: x):
 
 
 def run_all_sorts(records):
+    n = len(records)
+    # Bitonic Sort requiere n = potencia de 2; se usa la potencia inmediatamente
+    # superior o igual al n real. El algoritmo rellena con centinelas internamente.
+    bitonic_n = 1
+    while bitonic_n < n:
+        bitonic_n <<= 1
+
     algorithms = [
-        ("TimSort",               tim_sort,               len(records)),
-        ("Comb Sort",             comb_sort,              len(records)),
-        ("Selection Sort",        selection_sort,         SAMPLE_SIZE_SLOW),
-        ("Tree Sort",             tree_sort,              len(records)),
-        ("Pigeonhole Sort",       _pigeonhole_wrapper,    len(records)),
-        ("Bucket Sort",           bucket_sort,            len(records)),
-        ("QuickSort",             quick_sort,             len(records)),
-        ("HeapSort",              heap_sort,              len(records)),
-        ("Bitonic Sort",          bitonic_sort,           SAMPLE_SIZE_BITONIC),
-        ("Gnome Sort",            gnome_sort,             SAMPLE_SIZE_SLOW),
-        ("Binary Insertion Sort", binary_insertion_sort,  SAMPLE_SIZE_SLOW),
-        ("Radix Sort",            _radix_wrapper,         len(records)),
+        ("TimSort",               tim_sort,               n),
+        ("Comb Sort",             comb_sort,              n),
+        ("Selection Sort",        selection_sort,         n),
+        ("Tree Sort",             tree_sort,              n),
+        ("Pigeonhole Sort",       _pigeonhole_wrapper,    n),
+        ("Bucket Sort",           bucket_sort,            n),
+        ("QuickSort",             quick_sort,             n),
+        ("HeapSort",              heap_sort,              n),
+        ("Bitonic Sort",          bitonic_sort,           bitonic_n),
+        ("Gnome Sort",            gnome_sort,             n),
+        ("Binary Insertion Sort", binary_insertion_sort,  n),
+        ("Radix Sort",            _radix_wrapper,         n),
     ]
 
     results = []
     for name, func, sample_n in algorithms:
         subset = _sample(records, sample_n) if sample_n < len(records) else list(records)
+        # Para Bitonic Sort: sample_n puede ser > len(records) (padding a potencia de 2);
+        # el algoritmo maneja el relleno internamente, pasamos el dataset completo.
+        if sample_n > len(records):
+            subset = list(records)
         print("  " + name.ljust(25) + " n=" + str(len(subset)).rjust(7) + " ...", end=" ", flush=True)
         t0 = time.perf_counter()
         sorted_data = func(subset, key=sort_key_date_close)
