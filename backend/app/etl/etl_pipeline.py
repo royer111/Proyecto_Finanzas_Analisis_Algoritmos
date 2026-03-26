@@ -44,6 +44,14 @@ class ETLPipeline:
         print("\n>>> FASE 4: UNIFICACION DE VOLUMENES")
         self.merger.merge_volume()
 
+        # FASE 5: MERGE DE PRECIOS DESORDENADO -> merged_desorganized.csv
+        print("\n>>> FASE 5: UNIFICACION DESORDENADA")
+        self.merger.merge_unordered_assets()
+
+        # FASE 6: MERGE FORMATO LONG OHLCV -> merged_long_format.csv
+        print("\n>>> FASE 6: UNIFICACION FORMATO LONG")
+        self.merger.merge_long_format()
+
         print("\n==============================")
         print("   PROCESO ETL FINALIZADO")
         print("==============================\n")

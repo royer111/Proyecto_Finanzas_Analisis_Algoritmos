@@ -30,7 +30,7 @@ from datetime import datetime
 # CSV_CLOSE_PATH
 CSV_CLOSE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "..", "..", "..", "data", "merged", "merged_prices.csv"
+    "..", "..", "..", "data", "merged", "merged_desorganized.csv"
 )
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
 
