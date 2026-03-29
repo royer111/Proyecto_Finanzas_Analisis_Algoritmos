@@ -1,7 +1,6 @@
 """
 requerimiento_2.py
 ------------------
-Punto de entrada principal para el Requerimiento 2.
 
 Flujo por cada CSV mergeado de precios encontrado:
   1. Detecta automaticamente todos los CSVs en data/merged/ que corresponden
