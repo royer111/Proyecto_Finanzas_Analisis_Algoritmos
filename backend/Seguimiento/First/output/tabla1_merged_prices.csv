@@ -1,0 +1,13 @@
+Metodo de ordenamiento,Complejidad,Tamano,Tiempo (s)
+TimSort,O(n log n),20944,0.045215
+Comb Sort,O(n log n),20944,0.107407
+Selection Sort,O(n^2),20944,27.235739
+Tree Sort,O(n log n),20944,0.119409
+Pigeonhole Sort,O(n + range),20944,0.012693
+Bucket Sort,O(n + k),20944,0.011587
+QuickSort,O(n log n),20944,0.041083
+HeapSort,O(n log n),20944,0.131486
+Bitonic Sort,O(n log^2 n),20944,0.537179
+Gnome Sort,O(n^2),20944,0.045098
+Binary Insertion Sort,O(n^2),20944,0.048077
+Radix Sort,O(nk),20944,0.070967

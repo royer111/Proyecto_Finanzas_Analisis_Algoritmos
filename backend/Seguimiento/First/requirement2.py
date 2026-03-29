@@ -3,18 +3,25 @@ requerimiento_2.py
 ------------------
 Punto de entrada principal para el Requerimiento 2.
 
-Flujo:
-  1. Carga merged_prices.csv (producido por el Requerimiento 1).
-  2. Convierte el dataset wide a una lista de registros (date, close, ticker).
-  3. Ejecuta los 12 algoritmos de ordenamiento midiendo el tiempo de cada uno.
-  4. Construye la Tabla 1 y la exporta a CSV.
-  5. Genera el diagrama de barras con los tiempos (ascendente).
-  6. Obtiene los 15 dias con mayor volumen usando DataMerger.get_volume_records()
-     y los ordena de forma ascendente, exportando el resultado a CSV.
+Flujo por cada CSV mergeado de precios encontrado:
+  1. Detecta automaticamente todos los CSVs en data/merged/ que corresponden
+     a precios (excluye volumenes y long_format).
+  2. Por cada CSV: carga, construye registros, ejecuta 12 algoritmos,
+     exporta Tabla 1, diagrama completo y diagrama sin Gnome/Selection Sort.
+  3. Una sola vez: top-15 volumen via DataMerger + diagrama de barras horizontal.
 
-PASOS PARA CONFIGURAR:
-  1. Ajusta CSV_CLOSE_PATH si tu merged_prices.csv esta en otra ruta.
-  2. Cambia el import de DataMerger (busca el comentario <- CAMBIA).
+CSVs procesados como precios:
+  - merged_prices.csv        -> datos ordenados por fecha
+  - merged_desorganized.csv  -> datos sin orden cronologico
+  - merged_long_format.csv   -> formato long (Date, Ticker, Open, High, Low, Close, Volume)
+
+Salidas en output/:
+  Tabla 1:      tabla1_<nombre_csv>.csv          (una por CSV)
+  Dataset ord.: dataset_ordenado_<nombre_csv>.csv (una por CSV)
+  Diagrama 1:   diagrama_completo_<nombre_csv>.png (una por CSV, todos los alg.)
+  Diagrama 2:   diagrama_sin_outliers_<nombre_csv>.png (una por CSV, sin Gnome/Selection)
+  Top 15 vol.:  top15_mayor_volumen.csv           (una sola vez)
+  Diagrama vol: diagrama_top15_volumen.png        (una sola vez)
 """
 
 import csv
@@ -27,17 +34,23 @@ from datetime import datetime
 # CONFIGURACION
 # ===========================================================================
 
-# CSV_CLOSE_PATH
-CSV_CLOSE_PATH = os.path.join(
+# Carpeta donde estan los CSVs mergeados
+MERGED_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "..", "..", "..", "data", "merged", "merged_desorganized.csv"
+    "..", "..", "..", "data", "merged"
 )
+
+# Carpeta de salida
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
 
+# CSVs a EXCLUIR del procesamiento de precios (no son datasets de precios wide/long)
+EXCLUDE_FILES = {"merged_volumenes.csv"}
+
+# Algoritmos excluidos del diagrama sin outliers
+OUTLIER_ALGORITHMS = {"Selection Sort", "Gnome Sort"}
+
 # ---------------------------------------------------------------------------
-# Cambia este import por el de tu proyecto. Segun tu codigo deberia ser:
-#   from backend.app.services.data_merger import DataMerger
-# (ajusta la subcarpeta si data_merger.py esta en otro lugar)
+# Import de tu DataMerger — ajusta la ruta segun tu proyecto
 # ---------------------------------------------------------------------------
 try:
     from backend.app.etl.data_merger import DataMerger
@@ -45,7 +58,6 @@ try:
 except ImportError:
     DATA_MERGER_AVAILABLE = False
     print("[WARN] DataMerger no pudo importarse. El analisis de volumen sera omitido.")
-    print("       Ajusta el import de DataMerger al inicio de requerimiento_2.py")
 
 # ===========================================================================
 # IMPORTS INTERNOS
@@ -61,13 +73,14 @@ try:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import matplotlib.ticker as mticker
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
     print("[WARN] matplotlib no encontrado. Instala con: pip install matplotlib")
 
 # ===========================================================================
-# COMPLEJIDADES DE REFERENCIA PARA LA TABLA 1
+# COMPLEJIDADES
 # ===========================================================================
 
 COMPLEXITIES = {
@@ -85,20 +98,75 @@ COMPLEXITIES = {
     "Radix Sort":            "O(nk)",
 }
 
-# Todos los algoritmos usan el dataset completo.
-# Bitonic Sort usa la siguiente potencia de 2 >= n (requerimiento del algoritmo).
+
+# ===========================================================================
+# DETECCION DE CSVs MERGEADOS
+# ===========================================================================
+
+def discover_merged_csvs(merged_dir):
+    """
+    Detecta todos los archivos CSV en merged_dir y los clasifica:
+      - wide:      columnas Date + tickers (merged_prices, merged_desorganized)
+      - long:      columnas Date, Ticker, Open, High, Low, Close, Volume
+                   (merged_long_format)
+      - excluded:  volumenes u otros que no son de precios
+
+    Retorna lista de dicts:
+      {"path": str, "name": str, "format": "wide"|"long"}
+    ordenada para que merged_prices siempre sea el primero.
+    """
+    if not os.path.isdir(merged_dir):
+        print("[WARN] Carpeta merged no encontrada: " + merged_dir)
+        return []
+
+    found = []
+    for fname in sorted(os.listdir(merged_dir)):
+        if not fname.endswith(".csv"):
+            continue
+        if fname in EXCLUDE_FILES:
+            continue
+        path = os.path.join(merged_dir, fname)
+        fmt = _detect_csv_format(path)
+        if fmt is None:
+            continue
+        found.append({"path": path, "name": fname.replace(".csv", ""), "format": fmt})
+
+    # merged_prices primero si existe
+    found.sort(key=lambda x: (0 if x["name"] == "merged_prices" else 1, x["name"]))
+    return found
+
+
+def _detect_csv_format(path):
+    """
+    Lee solo el header del CSV para determinar si es wide o long.
+    Retorna "wide", "long" o None si no es procesable.
+    """
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            headers = [h.strip().lower() for h in next(reader)]
+    except Exception:
+        return None
+
+    long_cols = {"date", "ticker", "open", "high", "low", "close", "volume"}
+    if long_cols.issubset(set(headers)):
+        return "long"
+    if "date" in headers and len(headers) > 2:
+        return "wide"
+    return None
 
 
 # ===========================================================================
-# 1. CARGA DEL CSV
+# CARGA DE CSVs
 # ===========================================================================
 
-def load_csv(path):
+def load_csv_wide(path):
+    """
+    Carga CSV de formato wide: Date + columnas de tickers con precio de cierre.
+    Retorna (tickers, rows) donde rows es lista de dicts con 'date' y floats.
+    """
     if not os.path.exists(path):
-        raise FileNotFoundError(
-            "Archivo no encontrado: " + path + "\n"
-
-        )
+        raise FileNotFoundError("Archivo no encontrado: " + path)
     rows = []
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -106,7 +174,7 @@ def load_csv(path):
         tickers = [h for h in headers if h.lower() not in ("date", "fecha")]
         for row in reader:
             record = {}
-            raw_date = (row.get("Date") or row.get("date") or row.get("Fecha") or "").strip()
+            raw_date = (row.get("Date") or row.get("date") or "").strip()
             try:
                 record["date"] = datetime.strptime(raw_date, "%Y-%m-%d").date()
             except ValueError:
@@ -121,11 +189,63 @@ def load_csv(path):
     return tickers, rows
 
 
+def load_csv_long(path):
+    """
+    Carga CSV de formato long: Date, Ticker, Open, High, Low, Close, Volume.
+    Retorna (tickers, rows) con la misma estructura que load_csv_wide()
+    para que el resto del pipeline sea identico.
+
+    Estrategia: agrupa por fecha y construye un dict por fecha con
+    {ticker: close_price}, equivalente al formato wide en memoria.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError("Archivo no encontrado: " + path)
+
+    by_date = {}
+    tickers_set = []
+
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            raw_date = (row.get("Date") or row.get("date") or "").strip()
+            try:
+                dt = datetime.strptime(raw_date, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            ticker = (row.get("Ticker") or row.get("ticker") or "").strip()
+            if not ticker:
+                continue
+            try:
+                close = float(row.get("Close") or row.get("close") or "")
+            except (ValueError, TypeError):
+                continue
+            if dt not in by_date:
+                by_date[dt] = {"date": dt}
+            by_date[dt][ticker] = close
+            if ticker not in tickers_set:
+                tickers_set.append(ticker)
+
+    tickers_set.sort()
+    rows = list(by_date.values())
+    return tickers_set, rows
+
+
+def load_csv_auto(path, fmt):
+    """Despacha al loader correcto segun el formato detectado."""
+    if fmt == "long":
+        return load_csv_long(path)
+    return load_csv_wide(path)
+
+
 # ===========================================================================
-# 2. CONSTRUCCION DE REGISTROS
+# CONSTRUCCION DE REGISTROS
 # ===========================================================================
 
 def build_sort_records(tickers, rows):
+    """
+    Convierte dataset wide (en memoria) a lista plana de tuplas
+    (date, close_price, ticker). Un registro por cada par (fecha, activo).
+    """
     records = []
     for row in rows:
         for ticker in tickers:
@@ -136,12 +256,12 @@ def build_sort_records(tickers, rows):
 
 
 def sort_key_date_close(record):
-    """Primario: fecha. Secundario: precio de cierre."""
+    """Clave compuesta: primario fecha, secundario precio de cierre."""
     return (record[0].toordinal(), record[1])
 
 
 # ===========================================================================
-# 3. EJECUCION DE LOS 12 ALGORITMOS
+# EJECUCION DE LOS 12 ALGORITMOS
 # ===========================================================================
 
 def _sample(records, n):
@@ -175,9 +295,11 @@ def _radix_wrapper(arr, key=lambda x: x):
 
 
 def run_all_sorts(records):
+    """
+    Ejecuta los 12 algoritmos sobre records.
+    Retorna lista de dicts: nombre, complejidad, tamano, tiempo_s, sorted_data.
+    """
     n = len(records)
-    # Bitonic Sort requiere n = potencia de 2; se usa la potencia inmediatamente
-    # superior o igual al n real. El algoritmo rellena con centinelas internamente.
     bitonic_n = 1
     while bitonic_n < n:
         bitonic_n <<= 1
@@ -200,8 +322,6 @@ def run_all_sorts(records):
     results = []
     for name, func, sample_n in algorithms:
         subset = _sample(records, sample_n) if sample_n < len(records) else list(records)
-        # Para Bitonic Sort: sample_n puede ser > len(records) (padding a potencia de 2);
-        # el algoritmo maneja el relleno internamente, pasamos el dataset completo.
         if sample_n > len(records):
             subset = list(records)
         print("  " + name.ljust(25) + " n=" + str(len(subset)).rjust(7) + " ...", end=" ", flush=True)
@@ -220,12 +340,17 @@ def run_all_sorts(records):
 
 
 # ===========================================================================
-# 4. TABLA 1
+# TABLA 1 — exportar a CSV
 # ===========================================================================
 
-def export_table1(results, output_dir):
+def export_table1(results, output_dir, suffix=""):
+    """
+    Exporta la Tabla 1 con tiempos de todos los algoritmos.
+    suffix: identificador del CSV fuente (ej: 'merged_prices').
+    """
     os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, "tabla1_ordenamientos.csv")
+    fname = "tabla1_" + suffix + ".csv" if suffix else "tabla1_ordenamientos.csv"
+    path = os.path.join(output_dir, fname)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["Metodo de ordenamiento", "Complejidad", "Tamano", "Tiempo (s)"])
@@ -235,10 +360,35 @@ def export_table1(results, output_dir):
 
 
 # ===========================================================================
-# 5. DIAGRAMA DE BARRAS
+# DATASET ORDENADO COMPLETO
 # ===========================================================================
 
-def plot_bar_chart(results, output_dir):
+def export_sorted_dataset(sorted_records, output_dir, suffix=""):
+    """
+    Exporta el dataset completo ordenado por (fecha, close) a CSV.
+    suffix: identificador del CSV fuente.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    fname = "dataset_ordenado_" + suffix + ".csv" if suffix else "dataset_ordenado.csv"
+    path = os.path.join(output_dir, fname)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Fecha", "Close", "Ticker"])
+        for dt, close, ticker in sorted_records:
+            writer.writerow([str(dt), str(round(close, 6)), ticker])
+    print("[OK] Dataset ordenado -> " + path)
+
+
+# ===========================================================================
+# DIAGRAMA DE BARRAS COMPLETO (todos los algoritmos)
+# ===========================================================================
+
+def plot_bar_chart(results, output_dir, suffix="", title_extra=""):
+    """
+    Diagrama de barras con los 12 algoritmos ordenados por tiempo ascendente.
+    suffix:      identificador del CSV fuente para el nombre del archivo.
+    title_extra: texto adicional en el titulo (ej: nombre del CSV).
+    """
     if not MATPLOTLIB_AVAILABLE:
         print("[SKIP] matplotlib no disponible.")
         return
@@ -248,7 +398,7 @@ def plot_bar_chart(results, output_dir):
     times = [r["tiempo_s"] for r in sorted_r]
     sizes = [r["tamano"]   for r in sorted_r]
 
-    fig, ax = plt.subplots(figsize=(14, 7))
+    fig, ax = plt.subplots(figsize=(15, 7))
     colors = plt.cm.viridis([i / len(names) for i in range(len(names))])
     bars = ax.bar(range(len(names)), times, color=colors, edgecolor="white", linewidth=0.8)
 
@@ -258,32 +408,119 @@ def plot_bar_chart(results, output_dir):
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + max_t * 0.01,
             str(round(t, 4)) + "s\n(n=" + str(s) + ")",
-            ha="center", va="bottom", fontsize=7, color="#333333"
+            ha="center", va="bottom", fontsize=6.5, color="#333333"
         )
 
     ax.set_xticks(range(len(names)))
     ax.set_xticklabels(names, rotation=35, ha="right", fontsize=9)
     ax.set_ylabel("Tiempo de ejecucion (segundos)", fontsize=11)
-    ax.set_title("Requerimiento 2 - Tiempos de ordenamiento (ascendente)",
-                 fontsize=13, fontweight="bold", pad=15)
-    ax.set_xlabel("Algoritmo de ordenamiento", fontsize=11)
+    title = "Requerimiento 2 — Tiempos de ordenamiento (todos los algoritmos)"
+    if title_extra:
+        title += "\nFuente: " + title_extra
+    ax.set_title(title, fontsize=12, fontweight="bold", pad=12)
+    ax.set_xlabel("Algoritmo", fontsize=11)
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
     plt.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, "diagrama_barras_tiempos.png")
+    fname = "diagrama_completo_" + suffix + ".png" if suffix else "diagrama_completo.png"
+    path = os.path.join(output_dir, fname)
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    print("[OK] Diagrama de barras -> " + path)
+    print("[OK] Diagrama completo -> " + path)
 
 
 # ===========================================================================
-# 6. TOP-15 DIAS CON MAYOR VOLUMEN
+# DIAGRAMA DE BARRAS SIN OUTLIERS (excluye Gnome Sort y Selection Sort)
+# ===========================================================================
+
+def plot_bar_chart_no_outliers(results, output_dir, suffix="", title_extra=""):
+    """
+    Diagrama de barras excluyendo Gnome Sort y Selection Sort.
+    El eje Y se ajusta automaticamente al rango real de los algoritmos
+    restantes, permitiendo apreciar las diferencias entre ellos.
+    suffix:      identificador del CSV fuente.
+    title_extra: texto adicional en el titulo.
+    """
+    if not MATPLOTLIB_AVAILABLE:
+        print("[SKIP] matplotlib no disponible.")
+        return
+
+    filtered = [r for r in results if r["nombre"] not in OUTLIER_ALGORITHMS]
+    sorted_r = sorted(filtered, key=lambda r: r["tiempo_s"])
+    names = [r["nombre"]   for r in sorted_r]
+    times = [r["tiempo_s"] for r in sorted_r]
+    sizes = [r["tamano"]   for r in sorted_r]
+
+    # Paleta diferenciada por complejidad
+    complexity_colors = {
+        "O(n + range)":  "#2ecc71",
+        "O(n + k)":      "#27ae60",
+        "O(n log n)":    "#3498db",
+        "O(n log^2 n)":  "#9b59b6",
+        "O(nk)":         "#e67e22",
+        "O(n^2)":        "#e74c3c",
+    }
+    bar_colors = [complexity_colors.get(COMPLEXITIES.get(n, ""), "#95a5a6") for n in names]
+
+    fig, ax = plt.subplots(figsize=(15, 7))
+    bars = ax.bar(range(len(names)), times, color=bar_colors, edgecolor="white", linewidth=0.8)
+
+    max_t = max(times) if times else 1
+    for bar, t, s in zip(bars, times, sizes):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + max_t * 0.015,
+            str(round(t, 4)) + "s\n(n=" + str(s) + ")",
+            ha="center", va="bottom", fontsize=7, color="#333333"
+        )
+
+    ax.set_xticks(range(len(names)))
+    ax.set_xticklabels(names, rotation=35, ha="right", fontsize=9)
+
+    # Eje Y: desde 0 hasta max + 15% de margen para las etiquetas
+    ax.set_ylim(0, max_t * 1.25)
+    ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.4f s"))
+    ax.set_ylabel("Tiempo de ejecucion (segundos)", fontsize=11)
+
+    title = "Requerimiento 2 — Tiempos de ordenamiento (sin Gnome Sort / Selection Sort)"
+    if title_extra:
+        title += "\nFuente: " + title_extra
+    ax.set_title(title, fontsize=12, fontweight="bold", pad=12)
+    ax.set_xlabel("Algoritmo", fontsize=11)
+    ax.grid(axis="y", linestyle="--", alpha=0.4)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    # Leyenda de colores por complejidad
+    from matplotlib.patches import Patch
+    legend_items = [
+        Patch(color="#2ecc71", label="O(n + range)"),
+        Patch(color="#27ae60", label="O(n + k)"),
+        Patch(color="#3498db", label="O(n log n)"),
+        Patch(color="#9b59b6", label="O(n log^2 n)"),
+        Patch(color="#e67e22", label="O(nk)"),
+    ]
+    ax.legend(handles=legend_items, loc="upper left", fontsize=8,
+              title="Complejidad", title_fontsize=8, framealpha=0.7)
+
+    plt.tight_layout()
+    os.makedirs(output_dir, exist_ok=True)
+    fname = "diagrama_sin_outliers_" + suffix + ".png" if suffix else "diagrama_sin_outliers.png"
+    path = os.path.join(output_dir, fname)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print("[OK] Diagrama sin outliers -> " + path)
+
+
+# ===========================================================================
+# TOP-15 VOLUMEN
 # ===========================================================================
 
 def get_top15_volume(vol_records):
+    """Retorna los 15 registros con mayor volumen, ordenados ascendente."""
     sorted_desc = heap_sort(vol_records, key=lambda r: r[0])
     sorted_desc.reverse()
     top15 = sorted_desc[:15]
@@ -295,13 +532,16 @@ def print_top15_volume(top15):
     print("\n" + sep)
     print("  Top 15 dias con mayor volumen de negociacion (ascendente)")
     print(sep)
-    print("  " + "#".rjust(3) + "  " + "Ticker".ljust(10) + "  " + "Fecha".ljust(12) + "  " + "Volumen".rjust(18))
+    print("  " + "#".rjust(3) + "  " + "Ticker".ljust(10) + "  " +
+          "Fecha".ljust(12) + "  " + "Volumen".rjust(18))
     print("  " + "-"*3 + "  " + "-"*10 + "  " + "-"*12 + "  " + "-"*18)
     for i, (vol, dt, ticker) in enumerate(top15, 1):
-        print("  " + str(i).rjust(3) + "  " + ticker.ljust(10) + "  " + str(dt).ljust(12) + "  " + str(int(vol)).rjust(18))
+        print("  " + str(i).rjust(3) + "  " + ticker.ljust(10) + "  " +
+              str(dt).ljust(12) + "  " + str(int(vol)).rjust(18))
 
 
 def export_top15_volume(top15, output_dir):
+    """Exporta el top-15 de volumen a CSV."""
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, "top15_mayor_volumen.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
@@ -312,19 +552,104 @@ def export_top15_volume(top15, output_dir):
     print("[OK] Top 15 volumen -> " + path)
 
 
+def plot_top15_volume(top15, output_dir):
+    """
+    Diagrama de barras horizontal para los 15 dias con mayor volumen.
+    Barras horizontales para que los tickers y fechas sean legibles.
+    """
+    if not MATPLOTLIB_AVAILABLE:
+        print("[SKIP] matplotlib no disponible.")
+        return
+
+    labels = [str(dt) + " — " + ticker for (vol, dt, ticker) in top15]
+    volumes = [vol for (vol, dt, ticker) in top15]
+
+    # Colores por magnitud de volumen
+    max_v = max(volumes)
+    bar_colors = [plt.cm.YlOrRd(0.3 + 0.7 * v / max_v) for v in volumes]
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+    bars = ax.barh(range(len(labels)), volumes, color=bar_colors,
+                   edgecolor="white", linewidth=0.6)
+
+    for bar, v in zip(bars, volumes):
+        ax.text(
+            v + max_v * 0.005,
+            bar.get_y() + bar.get_height() / 2,
+            "{:,.0f}".format(v),
+            va="center", ha="left", fontsize=8, color="#333333"
+        )
+
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels(labels, fontsize=8.5)
+    ax.invert_yaxis()
+    ax.set_xlabel("Volumen de negociacion", fontsize=11)
+    ax.set_title("Top 15 dias con mayor volumen de negociacion (orden ascendente)",
+                 fontsize=12, fontweight="bold", pad=12)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(
+        lambda x, _: "{:,.0f}".format(x)
+    ))
+    ax.grid(axis="x", linestyle="--", alpha=0.4)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    plt.tight_layout()
+    os.makedirs(output_dir, exist_ok=True)
+    path = os.path.join(output_dir, "diagrama_top15_volumen.png")
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print("[OK] Diagrama top15 volumen -> " + path)
+
+
 # ===========================================================================
-# 7. DATASET ORDENADO COMPLETO
+# PROCESAMIENTO DE UN CSV MERGEADO
 # ===========================================================================
 
-def export_sorted_dataset(sorted_records, output_dir):
-    os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, "dataset_ordenado_fecha_close.csv")
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Fecha", "Close", "Ticker"])
-        for dt, close, ticker in sorted_records:
-            writer.writerow([str(dt), str(round(close, 6)), ticker])
-    print("[OK] Dataset ordenado -> " + path)
+def process_csv(csv_info, output_dir):
+    """
+    Ejecuta el pipeline completo de ordenamiento para un CSV mergeado.
+    csv_info: dict con keys 'path', 'name', 'format'.
+    Genera: tabla1, dataset_ordenado, diagrama_completo, diagrama_sin_outliers.
+    """
+    name   = csv_info["name"]
+    path   = csv_info["path"]
+    fmt    = csv_info["format"]
+    suffix = name
+
+    print("\n" + "=" * 65)
+    print("  CSV: " + name + "  [formato: " + fmt + "]")
+    print("=" * 65)
+
+    print("\n  [1/4] Cargando datos...")
+    tickers, rows = load_csv_auto(path, fmt)
+    print("        Activos : " + str(len(tickers)))
+    print("        Fechas  : " + str(len(rows)))
+
+    print("\n  [2/4] Construyendo registros (date, close, ticker)...")
+    records = build_sort_records(tickers, rows)
+    print("        Total registros: " + str(len(records)))
+
+    print("\n  [3/4] Ejecutando 12 algoritmos de ordenamiento...")
+    sort_results = run_all_sorts(records)
+
+    print("\n        " + "-" * 60)
+    print("        " + "Metodo".ljust(25) + " " + "Complejidad".ljust(18) +
+          " " + "Tamano".rjust(7) + "  " + "Tiempo (s)".rjust(11))
+    print("        " + "-" * 60)
+    for r in sort_results:
+        print("        " + r["nombre"].ljust(25) + " " +
+              r["complejidad"].ljust(18) + " " +
+              str(r["tamano"]).rjust(7) + "  " +
+              str(round(r["tiempo_s"], 6)).rjust(11))
+
+    print("\n  [4/4] Exportando resultados...")
+    export_table1(sort_results, output_dir, suffix)
+    timsort_result = next(r for r in sort_results if r["nombre"] == "TimSort")
+    export_sorted_dataset(timsort_result["sorted_data"], output_dir, suffix)
+    plot_bar_chart(sort_results, output_dir, suffix, title_extra=name)
+    plot_bar_chart_no_outliers(sort_results, output_dir, suffix, title_extra=name)
+
+    return sort_results
 
 
 # ===========================================================================
@@ -337,43 +662,58 @@ def main():
     print("  REQUERIMIENTO 2 - Analisis de algoritmos de ordenamiento")
     print(sep)
 
-    print("\n[1/5] Cargando: " + CSV_CLOSE_PATH)
-    tickers, rows = load_csv(CSV_CLOSE_PATH)
-    print("      Activos : " + str(len(tickers)))
-    print("      Fechas  : " + str(len(rows)))
+    # 1. Descubrir todos los CSVs mergeados de precios
+    print("\n[INFO] Buscando CSVs en: " + MERGED_DIR)
+    csv_list = discover_merged_csvs(MERGED_DIR)
 
-    print("\n[2/5] Construyendo registros (date, close, ticker) ...")
-    records = build_sort_records(tickers, rows)
-    print("      Total de registros: " + str(len(records)))
+    if not csv_list:
+        print("[ERROR] No se encontraron CSVs mergeados en: " + MERGED_DIR)
+        return
 
-    print("\n[3/5] Ejecutando los 12 algoritmos de ordenamiento ...")
-    sort_results = run_all_sorts(records)
+    print("[INFO] CSVs detectados:")
+    for c in csv_list:
+        print("       - " + c["name"] + ".csv  (" + c["format"] + ")")
 
-    print("\n  " + "-"*62)
-    print("  " + "Metodo".ljust(25) + " " + "Complejidad".ljust(18) + " " + "Tamano".rjust(8) + "  " + "Tiempo (s)".rjust(12))
-    print("  " + "-"*25 + " " + "-"*18 + " " + "-"*8 + "  " + "-"*12)
-    for r in sort_results:
-        print("  " + r["nombre"].ljust(25) + " " + r["complejidad"].ljust(18) + " " + str(r["tamano"]).rjust(8) + "  " + str(round(r["tiempo_s"], 6)).rjust(12))
+    # 2. Procesar cada CSV
+    all_results = {}
+    for csv_info in csv_list:
+        results = process_csv(csv_info, OUTPUT_DIR)
+        all_results[csv_info["name"]] = results
 
-    print("\n[4/5] Exportando resultados ...")
-    export_table1(sort_results, OUTPUT_DIR)
-    timsort_result = next(r for r in sort_results if r["nombre"] == "TimSort")
-    export_sorted_dataset(timsort_result["sorted_data"], OUTPUT_DIR)
-    plot_bar_chart(sort_results, OUTPUT_DIR)
+    # 3. Top-15 volumen (una sola vez, independiente del CSV de precios)
+    print("\n" + sep)
+    print("  ANALISIS DE VOLUMEN")
+    print(sep)
 
-    print("\n[5/5] Analisis de los 15 dias con mayor volumen ...")
     if DATA_MERGER_AVAILABLE:
+        print("\n[VOL] Obteniendo registros de volumen via DataMerger...")
         merger = DataMerger()
         vol_records = merger.get_volume_records()
         print("      Registros de volumen: " + str(len(vol_records)))
         top15 = get_top15_volume(vol_records)
         print_top15_volume(top15)
         export_top15_volume(top15, OUTPUT_DIR)
+        plot_top15_volume(top15, OUTPUT_DIR)
     else:
-        print("      [SKIP] DataMerger no disponible.")
+        print("[SKIP] DataMerger no disponible — analisis de volumen omitido.")
 
+    # 4. Resumen de archivos generados
     print("\n" + sep)
-    print("  Completado. Resultados en: " + OUTPUT_DIR)
+    print("  RESUMEN DE SALIDAS GENERADAS")
+    print(sep)
+    for csv_info in csv_list:
+        n = csv_info["name"]
+        print("  [" + n + "]")
+        print("    tabla1_" + n + ".csv")
+        print("    dataset_ordenado_" + n + ".csv")
+        print("    diagrama_completo_" + n + ".png")
+        print("    diagrama_sin_outliers_" + n + ".png")
+    if DATA_MERGER_AVAILABLE:
+        print("  [volumen]")
+        print("    top15_mayor_volumen.csv")
+        print("    diagrama_top15_volumen.png")
+
+    print("\n  Todos los archivos en: " + OUTPUT_DIR)
     print(sep)
 
 
