@@ -5,8 +5,8 @@ def main():
     ts = TimeSeries()
 
     # Cambia estos nombres por activos reales en tu merged_prices.csv
-    asset_1 = "AAPL"
-    asset_2 = "MSFT"
+    asset_1 = "VOO"
+    asset_2 = "CSPX.L"
 
     # Probar precios
     dates, s1, s2 = ts.get_series(asset_1, asset_2, "prices")
