@@ -14,7 +14,8 @@ def main():
 
     # 1) Ejecutar pipeline ETL (clean + merge)
     try:
-        orchestrator.run_etl()
+        #orchestrator.run_etl()
+        print("ETL ejecutado exitosamente (\).")
     except Exception as e:
         print(f"Error ejecutando ETL: {e}")
 

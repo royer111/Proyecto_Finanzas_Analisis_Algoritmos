@@ -133,7 +133,30 @@
         @media(max-width:900px) {
             header,nav,main { padding-left:16px; padding-right:16px; }
             .grid-2 { grid-template-columns:1fr; }
+            .metric-grid { grid-template-columns:repeat(2,1fr); }
         }
+
+        /* Similarity panel */
+        .metric-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
+        .metric-card { background:var(--surface2); border:1px solid var(--border2); border-radius:10px; padding:20px; text-align:center; }
+        .metric-card .m-label { font-family:var(--mono); font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; }
+        .metric-card .m-value { font-size:26px; font-weight:700; margin:8px 0 4px; font-family:var(--mono); }
+        .metric-card .m-type  { font-size:10px; font-family:var(--mono); }
+        .metric-card.distance .m-value  { color:var(--orange); }
+        .metric-card.similarity .m-value{ color:var(--accent); }
+        .metric-card.distance .m-type   { color:var(--orange); }
+        .metric-card.similarity .m-type { color:var(--accent); }
+        .sim-select { background:var(--surface2); border:1px solid var(--border2); color:var(--text); padding:8px 14px; border-radius:8px; font-family:var(--mono); font-size:12px; cursor:pointer; min-width:120px; }
+        .sim-select:focus { outline:none; border-color:var(--accent); }
+        .sim-controls { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+        .sim-controls label { font-size:12px; color:var(--text2); font-family:var(--mono); }
+        .sim-type-toggle { display:flex; gap:8px; }
+        .sim-type-btn { padding:6px 16px; border-radius:6px; border:1px solid var(--border2); background:var(--surface2); color:var(--text2); font-family:var(--mono); font-size:12px; cursor:pointer; transition:all .15s; }
+        .sim-type-btn.active { border-color:var(--accent); color:var(--accent); background:rgba(0,212,255,.06); }
+        .btn-calc { padding:9px 24px; border-radius:8px; border:none; background:var(--accent); color:#000; font-family:var(--mono); font-size:13px; font-weight:700; cursor:pointer; transition:all .2s; margin-left:auto; }
+        .btn-calc:hover { background:var(--accent2); }
+        .btn-calc:disabled { opacity:.5; cursor:not-allowed; }
+        .csv-badge { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:6px; background:rgba(0,230,118,.08); border:1px solid rgba(0,230,118,.2); color:var(--green); font-family:var(--mono); font-size:11px; }
     </style>
 </head>
 <body>
@@ -167,6 +190,7 @@
         <div class="tab"         onclick="switchTab('candlestick')">Candlestick</div>
         <div class="tab"         onclick="switchTab('risk')">Riesgo</div>
         <div class="tab"         onclick="switchTab('patterns')">Patrones</div>
+        <div class="tab"         onclick="switchTab('similarity')">Similitud</div>
     </nav>
 
     <main>
@@ -281,6 +305,70 @@
             </div>
         </div>
 
+
+        <!-- SIMILARITY -->
+        <div id="panel-similarity" class="panel">
+            <div class="card mb-20">
+                <div class="card-header">
+                    <span class="card-title">Comparativa de Similitud entre Activos</span>
+                    <span class="card-note">Euclidean · Pearson · Cosine · DTW</span>
+                </div>
+                <div class="card-body">
+                    <div class="sim-controls">
+                        <div>
+                            <label>Activo A</label><br>
+                            <select id="sim-asset-a" class="sim-select" style="margin-top:6px"></select>
+                        </div>
+                        <div>
+                            <label>Activo B</label><br>
+                            <select id="sim-asset-b" class="sim-select" style="margin-top:6px"></select>
+                        </div>
+                        <div>
+                            <label>Serie</label><br>
+                            <div class="sim-type-toggle" style="margin-top:6px">
+                                <button class="sim-type-btn active" id="btn-prices"  onclick="setSimType('prices')">Precios</button>
+                                <button class="sim-type-btn"        id="btn-returns" onclick="setSimType('returns')">Retornos</button>
+                            </div>
+                        </div>
+                        <button class="btn-calc" id="btn-calc" onclick="calcSimilarity()">&#9654; CALCULAR</button>
+                    </div>
+                    <div class="metric-grid" id="sim-metrics" style="display:none">
+                        <div class="metric-card distance" id="mc-euclidean">
+                            <div class="m-label">Euclidean</div>
+                            <div class="m-value" id="mv-euclidean">-</div>
+                            <div class="m-type">distancia</div>
+                        </div>
+                        <div class="metric-card similarity" id="mc-pearson">
+                            <div class="m-label">Pearson</div>
+                            <div class="m-value" id="mv-pearson">-</div>
+                            <div class="m-type">similitud</div>
+                        </div>
+                        <div class="metric-card similarity" id="mc-cosine">
+                            <div class="m-label">Cosine</div>
+                            <div class="m-value" id="mv-cosine">-</div>
+                            <div class="m-type">similitud</div>
+                        </div>
+                        <div class="metric-card distance" id="mc-dtw">
+                            <div class="m-label">DTW</div>
+                            <div class="m-value" id="mv-dtw">-</div>
+                            <div class="m-type">distancia</div>
+                        </div>
+                    </div>
+                    <div id="sim-csv-info" style="margin-bottom:16px;display:none">
+                        <span class="csv-badge">CSV guardado: <span id="sim-csv-name">-</span></span>
+                    </div>
+                    <div id="sim-chart-wrap" style="display:none">
+                        <div style="border-top:1px solid var(--border);margin:0 -20px;padding:12px 20px">
+                            <span class="card-title" id="sim-chart-title">Series Temporales</span>
+                        </div>
+                        <div style="height:320px;margin-top:16px">
+                            <canvas id="ch-similarity"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </main>
 </div>
 <div id="toast"></div>
@@ -334,7 +422,7 @@
     // ═══════════════════════════════════════════════════
     // TABS
     // ═══════════════════════════════════════════════════
-    const TAB_IDS = ['overview','heatmap','candlestick','risk','patterns'];
+    const TAB_IDS = ['overview','heatmap','candlestick','risk','patterns','similarity'];
 
     function switchTab(tab) {
         document.querySelectorAll('.tab').forEach((el,i) => el.classList.toggle('active', TAB_IDS[i] === tab));
@@ -345,6 +433,7 @@
         if (tab === 'candlestick' ) initCandlestick();
         if (tab === 'risk'        ) renderRiskPanel();
         if (tab === 'patterns'    ) renderPatternsPanel();
+        if (tab === 'similarity'  ) initSimilarity();
     }
 
     // ═══════════════════════════════════════════════════
@@ -952,6 +1041,132 @@
     window.addEventListener('resize', () => { if (S.candleData) drawCandle(); });
 
     // ═══════════════════════════════════════════════════
+
+    // SIMILARITY PANEL
+    let _simType = 'prices';
+    let _simInited = false;
+
+    function setSimType(type) {
+        _simType = type;
+        document.getElementById('btn-prices').classList.toggle('active', type === 'prices');
+        document.getElementById('btn-returns').classList.toggle('active', type === 'returns');
+    }
+
+    function initSimilarity() {
+        if (_simInited) return;
+        _simInited = true;
+        _buildSimSelects();
+    }
+
+    function _buildSimSelects() {
+        const tickers = S.tickers.length ? S.tickers
+            : ['VOO','CSPX.L','QQQ','VTI','EFA','IEMG','GLD','TLT',
+                'XLF','XLK','AAPL','MSFT','GOOGL','AMZN','META','NVDA','TSLA'];
+        const opts = tickers.map(t => '<option value="' + t + '">' + t + '</option>').join('');
+        document.getElementById('sim-asset-a').innerHTML = opts;
+        document.getElementById('sim-asset-b').innerHTML = opts;
+        document.getElementById('sim-asset-a').value = tickers[0];
+        document.getElementById('sim-asset-b').value = tickers.length > 1 ? tickers[1] : tickers[0];
+    }
+
+    async function calcSimilarity() {
+        const assetA = document.getElementById('sim-asset-a').value;
+        const assetB = document.getElementById('sim-asset-b').value;
+        if (assetA === assetB) { toast('Selecciona dos activos diferentes', 'error'); return; }
+        const btn = document.getElementById('btn-calc');
+        btn.disabled = true; btn.textContent = 'Calculando...';
+        document.getElementById('sim-metrics').style.display    = 'none';
+        document.getElementById('sim-csv-info').style.display   = 'none';
+        document.getElementById('sim-chart-wrap').style.display = 'none';
+        try {
+            const res = await fetch(API + '/dashboard/similarity', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ asset_a: assetA, asset_b: assetB, series_type: _simType }),
+            });
+            if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.statusText); }
+            const data = await res.json();
+            _renderSimilarityResults(data);
+            toast('Similitud calculada: ' + assetA + ' vs ' + assetB, 'success');
+        } catch(e) {
+            toast('Error: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false; btn.textContent = 'CALCULAR';
+        }
+    }
+
+    function _renderSimilarityResults(data) {
+        const { asset_a, asset_b, series_type, dates, series_a, series_b,
+            metrics, metric_types, csv_path } = data;
+        ['euclidean','pearson','cosine','dtw'].forEach(m => {
+            const val  = metrics[m];
+            const type = metric_types[m];
+            document.getElementById('mv-' + m).textContent = val >= 1000 ? val.toFixed(1) : val.toFixed(4);
+            document.getElementById('mc-' + m).className   = 'metric-card ' + type;
+        });
+        document.getElementById('sim-metrics').style.display = 'grid';
+        const fname = csv_path.split('/').pop().split('\\').pop();
+        document.getElementById('sim-csv-name').textContent = fname;
+        document.getElementById('sim-csv-info').style.display = 'block';
+        const label = series_type === 'prices' ? 'Precios' : 'Retornos';
+        document.getElementById('sim-chart-title').textContent =
+            'Series de ' + label + ': ' + asset_a + ' vs ' + asset_b;
+        document.getElementById('sim-chart-wrap').style.display = 'block';
+        _buildSimilarityChart(dates, series_a, series_b, asset_a, asset_b, series_type);
+    }
+
+    function _buildSimilarityChart(dates, seriesA, seriesB, labelA, labelB, seriesType) {
+        destroyChart('similarity');
+        const maxPoints = 400;
+        const step = dates.length > maxPoints ? Math.ceil(dates.length / maxPoints) : 1;
+        const fd = dates.filter((_,i)   => i % step === 0);
+        const fa = seriesA.filter((_,i) => i % step === 0);
+        const fb = seriesB.filter((_,i) => i % step === 0);
+        const ctx = document.getElementById('ch-similarity').getContext('2d');
+        S.charts['similarity'] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: fd,
+                datasets: [
+                    { label: labelA, data: fa, borderColor: '#00d4ff',
+                        backgroundColor: 'rgba(0,212,255,.06)', borderWidth: 1.5,
+                        pointRadius: 0, tension: 0, yAxisID: 'yA' },
+                    { label: labelB, data: fb, borderColor: '#ffab40',
+                        backgroundColor: 'rgba(255,171,64,.06)', borderWidth: 1.5,
+                        pointRadius: 0, tension: 0,
+                        yAxisID: seriesType === 'prices' ? 'yB' : 'yA' },
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#cdd9e5',
+                            font: { family: 'Space Mono', size: 10 }, padding: 16 } },
+                    tooltip: { callbacks: { label: c =>
+                                ' ' + c.dataset.label + ': ' +
+                                (c.parsed.y >= 100 ? c.parsed.y.toFixed(2) : c.parsed.y.toFixed(4))
+                        }}
+                },
+                scales: {
+                    x: { grid: { color: '#1a2d44' },
+                        ticks: { color: '#768d9e',
+                            font: { family: 'Space Mono', size: 9 },
+                            maxTicksLimit: 10 } },
+                    yA: { type: 'linear', position: 'left',
+                        grid: { color: '#1a2d44' },
+                        ticks: { color: '#00d4ff',
+                            font: { family: 'Space Mono', size: 9 } } },
+                    yB: { type: 'linear', position: 'right',
+                        display: seriesType === 'prices',
+                        grid: { drawOnChartArea: false },
+                        ticks: { color: '#ffab40',
+                            font: { family: 'Space Mono', size: 9 } } },
+                }
+            }
+        });
+    }
+
     // START
     // ═══════════════════════════════════════════════════
     init();

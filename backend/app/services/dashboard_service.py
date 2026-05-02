@@ -318,3 +318,168 @@ def get_available_tickers():
         return {"tickers": tickers}
     except Exception as e:
         return {"tickers": [], "error": str(e)}
+
+
+# ===========================================================================
+# SIMILITUD ENTRE DOS ACTIVOS — llama a ServiceOrchestrator ya existente
+# Exporta CSV en REQ2_OUTPUT / similarity_{a}_{b}_{type}.csv
+# ===========================================================================
+
+# Ruta de salida para los CSVs de similitud (Req. 2 output)
+REQ2_OUTPUT = BASE / "backend" / "app" / "model" / "output" / "requerimiento_2"
+
+
+def get_similarity(asset_a: str, asset_b: str, series_type: str = "prices") -> dict:
+    """
+    Compara dos activos usando los 4 algoritmos de similitud del proyecto:
+      Euclidean, Pearson, Cosine y DTW.
+
+    Delega completamente en ServiceOrchestrator.compare_assets() que ya
+    esta implementado y probado. Esta funcion solo:
+      1. Instancia el orquestador y llama a compare_assets().
+      2. Exporta el resultado a un CSV en REQ2_OUTPUT.
+      3. Retorna el JSON enriquecido con csv_path.
+
+    Parametros:
+        asset_a:     ticker del primer activo  (ej: "VOO")
+        asset_b:     ticker del segundo activo (ej: "NVDA")
+        series_type: "prices" (precios de cierre) o "returns" (retornos log)
+
+    Retorna:
+        {
+          "asset_a":     "VOO",
+          "asset_b":     "NVDA",
+          "series_type": "prices",
+          "dates":       ["2019-01-02", ...],   # fechas alineadas
+          "series_a":    [229.99, ...],          # valores activo A
+          "series_b":    [3.40, ...],            # valores activo B
+          "metrics": {
+              "euclidean": 1842.3,    # distancia — menor = mas similar
+              "pearson":   0.8821,    # similitud  — mas cercano a 1 = mas similar
+              "cosine":    0.9934,    # similitud  — mas cercano a 1 = mas similar
+              "dtw":       38.21,     # distancia  — menor = mas similar
+          },
+          "metric_types": {
+              "euclidean": "distance",
+              "pearson":   "similarity",
+              "cosine":    "similarity",
+              "dtw":       "distance",
+          },
+          "csv_path": "backend/app/model/output/requerimiento_2/similarity_VOO_NVDA_prices.csv"
+        }
+
+    Lanza:
+        ValueError      si un ticker no existe en las series alineadas.
+        FileNotFoundError si merged_prices.csv no existe.
+        Exception       si ServiceOrchestrator falla por cualquier razon.
+    """
+    # 1. Llamar a ServiceOrchestrator — reutiliza todo el codigo existente
+    #    ServiceOrchestrator → SimilarityService → TimeSeries → algoritmos
+    from backend.app.services.service_orchestrator import ServiceOrchestrator
+
+    orchestrator = ServiceOrchestrator()
+    result = orchestrator.compare_assets(asset_a, asset_b, series_type=series_type)
+    # result tiene: { dates, series_a, series_b, metrics }
+
+    dates    = result.get("dates",    [])
+    series_a = result.get("series_a", [])
+    series_b = result.get("series_b", [])
+    metrics  = result.get("metrics",  {})
+
+    if not dates:
+        raise ValueError(
+            f"No se encontraron fechas alineadas para {asset_a} y {asset_b}. "
+            "Verifica que ambos activos existan en merged_prices.csv."
+        )
+
+    # 2. Exportar CSV con fechas, ambas series y las 4 metricas como columnas
+    csv_path = _export_similarity_csv(
+        asset_a, asset_b, series_type,
+        dates, series_a, series_b, metrics
+    )
+
+    # 3. Tipos de cada metrica (distancia o similitud) para que el front
+    #    pueda interpretar correctamente si mayor/menor es mejor
+    metric_types = {
+        "euclidean": "distance",
+        "pearson":   "similarity",
+        "cosine":    "similarity",
+        "dtw":       "distance",
+    }
+
+    return {
+        "asset_a":      asset_a,
+        "asset_b":      asset_b,
+        "series_type":  series_type,
+        "dates":        [str(d) for d in dates],
+        "series_a":     series_a,
+        "series_b":     series_b,
+        "metrics":      metrics,
+        "metric_types": metric_types,
+        "csv_path":     str(csv_path),
+    }
+
+
+def _export_similarity_csv(
+        asset_a: str, asset_b: str, series_type: str,
+        dates, series_a, series_b, metrics: dict
+) -> str:
+    """
+    Exporta los resultados de similitud a un CSV en REQ2_OUTPUT.
+
+    Estructura del CSV:
+        Date, {asset_a}, {asset_b}, Euclidean, Pearson, Cosine, DTW
+
+    Las metricas se repiten en todas las filas porque son valores globales
+    del par de series completas — esto facilita leerlos con cualquier
+    herramienta sin necesidad de parseo especial.
+
+    Nombre del archivo: similarity_{asset_a}_{asset_b}_{series_type}.csv
+    Ejemplo:            similarity_VOO_NVDA_prices.csv
+
+    Retorna la ruta del archivo creado como string.
+    """
+    REQ2_OUTPUT.mkdir(parents=True, exist_ok=True)
+
+    filename = f"similarity_{asset_a}_{asset_b}_{series_type}.csv"
+    filepath = REQ2_OUTPUT / filename
+
+    euclidean = round(metrics.get("euclidean", 0), 6)
+    pearson   = round(metrics.get("pearson",   0), 6)
+    cosine    = round(metrics.get("cosine",    0), 6)
+    dtw       = round(metrics.get("dtw",       0), 6)
+
+    with open(filepath, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+
+        # Encabezado
+        writer.writerow([
+            "Date",
+            asset_a,
+            asset_b,
+            "Euclidean",
+            "Pearson",
+            "Cosine",
+            "DTW",
+        ])
+
+        # Una fila por fecha con los valores de ambas series
+        # Las metricas se incluyen solo en la primera fila; las demas quedan vacias
+        # para no inflar el archivo con valores repetidos
+        for i, (date, val_a, val_b) in enumerate(zip(dates, series_a, series_b)):
+            if i == 0:
+                writer.writerow([
+                    str(date),
+                    round(val_a, 6) if val_a is not None else "",
+                    round(val_b, 6) if val_b is not None else "",
+                    euclidean, pearson, cosine, dtw,
+                ])
+            else:
+                writer.writerow([
+                    str(date),
+                    round(val_a, 6) if val_a is not None else "",
+                    round(val_b, 6) if val_b is not None else "",
+                    "", "", "", "",
+                ])
+
+    return str(filepath)
