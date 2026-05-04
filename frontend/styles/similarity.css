@@ -1,0 +1,84 @@
+/* ============================================================
+   similarity.css — Panel de Similitud:
+   metric-grid, metric-card, sim-select, sim-controls,
+   sim-type-toggle, btn-calc, csv-badge
+   ============================================================ */
+
+/* ── Grid de métricas (4 tarjetas) ── */
+.metric-grid {
+    display:grid; grid-template-columns:repeat(4,1fr);
+    gap:16px; margin-bottom:24px;
+}
+
+/* ── Tarjetas individuales ── */
+.metric-card {
+    background:var(--surface2); border:1px solid var(--border2);
+    border-radius:10px; padding:20px; text-align:center;
+}
+.metric-card .m-label {
+    font-family:var(--mono); font-size:10px; color:var(--text2);
+    text-transform:uppercase; letter-spacing:.5px;
+}
+.metric-card .m-value {
+    font-size:26px; font-weight:700;
+    margin:8px 0 4px; font-family:var(--mono);
+}
+.metric-card .m-type { font-size:10px; font-family:var(--mono); }
+
+/* Colores segun tipo de metrica */
+.metric-card.distance .m-value  { color:var(--orange); }
+.metric-card.similarity .m-value { color:var(--accent); }
+.metric-card.distance .m-type   { color:var(--orange); }
+.metric-card.similarity .m-type { color:var(--accent); }
+
+/* ── Select de activos ── */
+.sim-select {
+    background:var(--surface2); border:1px solid var(--border2);
+    color:var(--text); padding:8px 14px; border-radius:8px;
+    font-family:var(--mono); font-size:12px;
+    cursor:pointer; min-width:120px;
+}
+.sim-select:focus { outline:none; border-color:var(--accent); }
+
+/* ── Fila de controles ── */
+.sim-controls {
+    display:flex; align-items:center; gap:16px;
+    flex-wrap:wrap; margin-bottom:20px;
+}
+.sim-controls label { font-size:12px; color:var(--text2); font-family:var(--mono); }
+
+/* ── Toggle Precios / Retornos ── */
+.sim-type-toggle { display:flex; gap:8px; }
+.sim-type-btn {
+    padding:6px 16px; border-radius:6px;
+    border:1px solid var(--border2); background:var(--surface2);
+    color:var(--text2); font-family:var(--mono); font-size:12px;
+    cursor:pointer; transition:all .15s;
+}
+.sim-type-btn.active {
+    border-color:var(--accent); color:var(--accent);
+    background:rgba(0,212,255,.06);
+}
+
+/* ── Botón calcular ── */
+.btn-calc {
+    padding:9px 24px; border-radius:8px; border:none;
+    background:var(--accent); color:#000;
+    font-family:var(--mono); font-size:13px; font-weight:700;
+    cursor:pointer; transition:all .2s; margin-left:auto;
+}
+.btn-calc:hover    { background:var(--accent2); }
+.btn-calc:disabled { opacity:.5; cursor:not-allowed; }
+
+/* ── Badge CSV exportado ── */
+.csv-badge {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:6px 14px; border-radius:6px;
+    background:rgba(0,230,118,.08); border:1px solid rgba(0,230,118,.2);
+    color:var(--green); font-family:var(--mono); font-size:11px;
+}
+
+/* ── Responsive ── */
+@media(max-width:900px) {
+    .metric-grid { grid-template-columns:repeat(2,1fr); }
+}

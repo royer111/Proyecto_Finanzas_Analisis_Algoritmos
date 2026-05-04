@@ -18,5 +18,4 @@ __pycache__/
 .idea/
 *.iml
 
-# Salidas de datos (para que no subas los CSV o resultados generados)
-backend/app/model/output/
+

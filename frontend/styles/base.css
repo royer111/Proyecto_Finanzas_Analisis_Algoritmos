@@ -1,0 +1,56 @@
+/* ============================================================
+   base.css — Variables, reset global, body, animaciones
+   ============================================================ */
+
+:root {
+    --bg:      #080c14;
+    --surface: #0d1520;
+    --surface2:#111d2e;
+    --border:  #1a2d44;
+    --border2: #1e3550;
+    --accent:  #00d4ff;
+    --accent2: #0098b8;
+    --green:   #00e676;
+    --red:     #ff4444;
+    --orange:  #ffab40;
+    --text:    #cdd9e5;
+    --text2:   #768d9e;
+    --text3:   #3d5166;
+    --mono:    'Space Mono', monospace;
+    --sans:    'DM Sans', sans-serif;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* Grid de fondo decorativo */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background-image:
+            linear-gradient(var(--border) 1px, transparent 1px),
+            linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 60px 60px;
+    opacity: .2;
+    pointer-events: none;
+}
+
+#app { position: relative; z-index: 1; }
+
+/* Animaciones globales */
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+@keyframes spin   { to{transform:rotate(360deg)} }
+
+/* Scrollbar */
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track  { background: var(--bg); }
+::-webkit-scrollbar-thumb  { background: var(--border2); border-radius:3px; }
